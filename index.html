@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Physarum — a slime-mould route optimiser</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;1,9..144,400;1,9..144,600&family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-void:#070a08;
+    --bg-panel:#0e130f;
+    --dish-edge:#1a221a;
+    --tube-dim:#3c4a35;
+    --gold:#d9ae54;
+    --gold-bright:#f6d989;
+    --spore:#8fd3a0;
+    --text:#efe9db;
+    --text-muted:#8b9186;
+    --danger:#c97a63;
+    --font-display:'Fraunces', serif;
+    --font-body:'Space Grotesk', sans-serif;
+    --font-mono:'JetBrains Mono', monospace;
+  }
+
+  *{box-sizing:border-box;}
+
+  body{
+    margin:0;
+    background:radial-gradient(120% 100% at 50% -10%, #10160f 0%, var(--bg-void) 55%);
+    color:var(--text);
+    font-family:var(--font-body);
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    padding:32px 18px 48px;
+  }
+
+  .app{
+    width:100%;
+    max-width:720px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:22px;
+  }
+
+  .masthead{
+    width:100%;
+    text-align:left;
+  }
+
+  .eyebrow{
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:0.22em;
+    text-transform:uppercase;
+    color:var(--spore);
+    margin:0 0 6px;
+  }
+
+  .wordmark{
+    font-family:var(--font-display);
+    font-style:italic;
+    font-optical-sizing:auto;
+    font-weight:500;
+    font-size:clamp(34px, 7vw, 52px);
+    margin:0;
+    color:var(--text);
+    letter-spacing:-0.01em;
+  }
+
+  .tagline{
+    margin:6px 0 0;
+    color:var(--text-muted);
+    font-size:14.5px;
+    max-width:46ch;
+  }
+
+  .stage{width:100%; display:flex; justify-content:center;}
+
+  .dish-wrap{
+    position:relative;
+    width:min(560px, 92vw);
+    aspect-ratio:1/1;
+    border-radius:50%;
+    box-shadow:
+      0 0 0 1px var(--dish-edge),
+      0 30px 60px -20px rgba(0,0,0,0.7),
+      inset 0 0 60px rgba(0,0,0,0.55);
+    overflow:hidden;
+    background:var(--bg-panel);
+  }
+
+  canvas{
+    display:block;
+    width:100%;
+    height:100%;
+    cursor:crosshair;
+    touch-action:none;
+  }
+
+  .dish-hint{
+    position:absolute;
+    left:50%; top:50%;
+    transform:translate(-50%,-50%);
+    font-family:var(--font-mono);
+    font-size:12.5px;
+    color:var(--text-muted);
+    text-align:center;
+    pointer-events:none;
+    max-width:70%;
+    line-height:1.5;
+    letter-spacing:0.02em;
+  }
+
+  @media (prefers-reduced-motion: no-preference){
+    .dish-hint{ animation: breathe 3.2s ease-in-out infinite; }
+  }
+  @keyframes breathe{
+    0%,100%{ opacity:0.55; }
+    50%{ opacity:0.95; }
+  }
+
+  .hint-sub{
+    display:inline-block;
+    margin-top:6px;
+    font-size:10.5px;
+    color:var(--spore);
+    opacity:0.85;
+  }
+
+  .label-popup{
+    position:absolute;
+    left:0; top:0;
+    width:172px;
+    background:var(--bg-panel);
+    border:1px solid var(--gold);
+    border-radius:12px;
+    padding:10px;
+    box-shadow:0 14px 30px -10px rgba(0,0,0,0.75);
+    z-index:5;
+  }
+  .label-popup input{
+    width:100%;
+    background:var(--bg-void);
+    border:1px solid var(--dish-edge);
+    color:var(--text);
+    font-family:var(--font-body);
+    font-size:12.5px;
+    padding:7px 9px;
+    border-radius:8px;
+    outline:none;
+  }
+  .label-popup input:focus{ border-color:var(--gold); }
+  .chip-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:5px;
+    margin-top:8px;
+  }
+  .chip{
+    font-family:var(--font-mono);
+    font-size:10px;
+    padding:5px 9px;
+    border-radius:999px;
+    border:1px solid var(--dish-edge);
+    background:transparent;
+    color:var(--text-muted);
+  }
+  .chip:hover{ border-color:var(--spore); color:var(--spore); }
+  .popup-actions{
+    display:flex;
+    justify-content:space-between;
+    margin-top:9px;
+    gap:8px;
+  }
+  .ghost-mini, .primary-mini{
+    flex:1;
+    font-family:var(--font-body);
+    font-size:11.5px;
+    padding:6px 0;
+    border-radius:8px;
+    border:1px solid var(--dish-edge);
+    background:transparent;
+    color:var(--text-muted);
+  }
+  .ghost-mini:hover{ border-color:var(--danger); color:var(--danger); }
+  .primary-mini{
+    background:linear-gradient(180deg, #cd9f4c, #a97e34);
+    border-color:transparent;
+    color:#1c1404;
+    font-weight:600;
+  }
+  .delete-mini{
+    width:100%;
+    margin-top:7px;
+    font-family:var(--font-body);
+    font-size:11px;
+    padding:6px 0;
+    border-radius:8px;
+    border:1px solid var(--dish-edge);
+    background:transparent;
+    color:var(--danger);
+    opacity:0.8;
+  }
+  .delete-mini:hover{ border-color:var(--danger); opacity:1; background:rgba(201,122,99,0.1); }
+
+  .dock{
+    width:100%;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+    border-top:1px solid var(--dish-edge);
+    padding-top:16px;
+  }
+
+  .controls{ display:flex; gap:10px; flex-wrap:wrap; }
+
+  button{
+    font-family:var(--font-body);
+    font-size:13px;
+    font-weight:500;
+    letter-spacing:0.01em;
+    color:var(--text);
+    background:var(--bg-panel);
+    border:1px solid var(--dish-edge);
+    padding:10px 16px;
+    border-radius:999px;
+    cursor:pointer;
+    transition:border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+  }
+  button:hover{ border-color:var(--gold); color:var(--gold-bright); }
+  button:focus-visible{ outline:2px solid var(--spore); outline-offset:2px; }
+  button:disabled{ opacity:0.4; cursor:not-allowed; }
+  button.primary{
+    background:linear-gradient(180deg, #cd9f4c, #a97e34);
+    border-color:transparent;
+    color:#1c1404;
+    font-weight:600;
+  }
+  button.primary:hover{ color:#1c1404; filter:brightness(1.08); }
+
+  .readout{
+    display:flex;
+    gap:20px;
+    font-family:var(--font-mono);
+  }
+  .scale-control{
+    display:flex;
+    align-items:center;
+    gap:7px;
+    font-family:var(--font-mono);
+  }
+  .scale-control input{
+    width:50px;
+    background:transparent;
+    border:none;
+    border-bottom:1px solid var(--dish-edge);
+    color:var(--gold-bright);
+    font-family:var(--font-mono);
+    font-size:13px;
+    padding:2px 0;
+    outline:none;
+  }
+  .scale-control input:focus{ border-color:var(--gold); }
+  .stat{ display:flex; flex-direction:column; gap:2px; min-width:64px; }
+  .stat-label{
+    font-size:9.5px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--text-muted);
+  }
+  .stat-value{ font-size:15px; color:var(--gold-bright); }
+
+  details.about{
+    width:100%;
+    border-top:1px solid var(--dish-edge);
+    padding-top:14px;
+    color:var(--text-muted);
+    font-size:13px;
+    line-height:1.6;
+  }
+  details.about summary{
+    cursor:pointer;
+    color:var(--spore);
+    font-family:var(--font-mono);
+    font-size:11.5px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    margin-bottom:8px;
+  }
+  details.about summary:focus-visible{ outline:2px solid var(--spore); outline-offset:3px; }
+  details.about p{ margin:0 0 10px; }
+  details.about p:last-child{ margin-bottom:0; }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <header class="masthead">
+    <p class="eyebrow">T01 · Bio-Inspired Algorithms for Problem Solving</p>
+    <h1 class="wordmark">Physarum</h1>
+    <p class="tagline">Click inside the dish to drop cities. The culture grows a tube network between them, reinforces the efficient routes, and lets the rest wither — the same rule <em>Physarum polycephalum</em> uses to find the shortest path between food sources.</p>
+  </header>
+
+  <div class="stage">
+    <div class="dish-wrap">
+      <canvas id="dish"></canvas>
+      <div class="dish-hint" id="hint">click inside the dish<br>to place a city<br><span class="hint-sub">right-click a node to label it</span></div>
+      <div class="label-popup" id="labelPopup" hidden>
+        <input type="text" id="labelInput" placeholder="e.g. Hospital" maxlength="18" autocomplete="off">
+        <div class="chip-row">
+          <button type="button" class="chip" data-label="City">City</button>
+          <button type="button" class="chip" data-label="Hospital">Hospital</button>
+          <button type="button" class="chip" data-label="Depot">Depot</button>
+          <button type="button" class="chip" data-label="Warehouse">Warehouse</button>
+        </div>
+        <div class="popup-actions">
+          <button type="button" id="labelClear" class="ghost-mini">Clear</button>
+          <button type="button" id="labelSave" class="primary-mini">Save</button>
+        </div>
+        <button type="button" id="nodeDelete" class="delete-mini">Delete node</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="dock">
+    <div class="controls">
+      <button id="btnRandom" type="button">Scatter cities</button>
+      <button id="btnSolve" class="primary" type="button" disabled>Grow network</button>
+      <button id="btnReset" type="button">Clear dish</button>
+    </div>
+    <div class="scale-control">
+      <span class="stat-label">km / 100px</span>
+      <input type="number" id="scaleInput" value="1" min="0.1" step="0.1">
+    </div>
+    <div class="readout">
+      <div class="stat"><span class="stat-label">cities</span><span class="stat-value" id="statCities">0</span></div>
+      <div class="stat"><span class="stat-label">iteration</span><span class="stat-value" id="statIter">–</span></div>
+      <div class="stat"><span class="stat-label">route</span><span class="stat-value" id="statBest">–</span></div>
+      <div class="stat"><span class="stat-label">status</span><span class="stat-value" id="statStatus">idle</span></div>
+    </div>
+  </div>
+
+  <details class="about">
+    <summary>How the growth rule works</summary>
+    <p>Every pair of cities starts connected by a faint tube of equal conductivity — a blank plasmodium with no preference. Each cycle, a batch of protoplasmic flows samples routes between cities, favouring tubes that are already thick and short.</p>
+    <p>Afterwards every tube evaporates a little, and the flows that completed short tours reinforce the tubes they used, in proportion to how short their tour was. Thick tubes get thicker, thin ones fade below the visibility threshold and disappear — mirroring how a real slime mould prunes redundant tubes down to an efficient network, as seen in Nakagaki's 2000 maze experiment and the Tero et al. Tokyo-rail study this algorithm is loosely modelled on.</p>
+    <p>Drag any city once a route exists — the tour re-lays itself over the new positions instantly; press "Grow network" again to re-optimise from scratch.</p>
+  </details>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- setup ----------
+  const canvas = document.getElementById('dish');
+  const ctx = canvas.getContext('2d');
+  const hint = document.getElementById('hint');
+  const btnRandom = document.getElementById('btnRandom');
+  const btnSolve = document.getElementById('btnSolve');
+  const btnReset = document.getElementById('btnReset');
+  const statCities = document.getElementById('statCities');
+  const statIter = document.getElementById('statIter');
+  const statBest = document.getElementById('statBest');
+  const statStatus = document.getElementById('statStatus');
+  const labelPopup = document.getElementById('labelPopup');
+  const labelInput = document.getElementById('labelInput');
+  const labelSave = document.getElementById('labelSave');
+  const labelClear = document.getElementById('labelClear');
+  const nodeDelete = document.getElementById('nodeDelete');
+  const scaleInput = document.getElementById('scaleInput');
+  let scaleKmPer100px = 1;
+  const dishWrap = document.querySelector('.dish-wrap');
+
+  let SIZE = 560;
+  let DPR = Math.max(1, window.devicePixelRatio || 1);
+
+  function resize(){
+    const rect = canvas.getBoundingClientRect();
+    SIZE = rect.width;
+    canvas.width = Math.round(SIZE * DPR);
+    canvas.height = Math.round(SIZE * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    draw();
+  }
+  window.addEventListener('resize', resize);
+
+  // ---------- state ----------
+  /** @type {{x:number,y:number}[]} */
+  let cities = [];
+  let D = [];              // conductivity matrix
+  let tourOrder = null;    // current best tour, array of city indices
+  let bestLength = Infinity;
+  let running = false;
+  let rafId = null;
+  let iteration = 0;
+  let stagnation = 0;
+  const MAX_ITER = 220;
+  const STAGNATION_LIMIT = 45;
+  const MIN_D = 0.05;
+  const MAX_D = 60;
+  const RIM_MARGIN = 26; // keep cities off the very edge of the dish
+
+  const dragState = { active:false, index:-1, moved:false, startX:0, startY:0 };
+  let labelPopupIndex = -1;
+
+  // ---------- geometry helpers ----------
+  function dishRadius(){ return SIZE/2 - RIM_MARGIN; }
+  function dishCenter(){ return { x: SIZE/2, y: SIZE/2 }; }
+
+  function insideDish(x,y){
+    const c = dishCenter();
+    const dx = x-c.x, dy = y-c.y;
+    return Math.sqrt(dx*dx+dy*dy) <= dishRadius();
+  }
+
+  function randomPointInDish(){
+    const c = dishCenter();
+    const r = dishRadius() * Math.sqrt(Math.random()) * 0.88;
+    const a = Math.random() * Math.PI * 2;
+    return { x: c.x + r*Math.cos(a), y: c.y + r*Math.sin(a) };
+  }
+
+  function dist(a,b){
+    const dx = a.x-b.x, dy = a.y-b.y;
+    return Math.sqrt(dx*dx+dy*dy);
+  }
+
+  function tourLength(order){
+    let L = 0;
+    for(let i=0;i<order.length;i++){
+      const a = cities[order[i]];
+      const b = cities[order[(i+1)%order.length]];
+      L += dist(a,b);
+    }
+    return L;
+  }
+
+  function formatDistance(pxLen){
+    if(!isFinite(pxLen)) return '–';
+    const km = pxLen * (scaleKmPer100px/100);
+    return (km < 10 ? km.toFixed(2) : km.toFixed(1)) + ' km';
+  }
+
+  function updateBestStatDisplay(){
+    statBest.textContent = isFinite(bestLength) ? formatDistance(bestLength) : '–';
+  }
+
+  scaleInput.addEventListener('input', () => {
+    const v = parseFloat(scaleInput.value);
+    if(isFinite(v) && v > 0) scaleKmPer100px = v;
+    updateBestStatDisplay();
+    draw();
+  });
+
+  // deterministic small wobble so veins look organic but don't jitter frame-to-frame
+  function wobble(i,j){
+    return Math.sin(i*12.9898 + j*78.233) * 0.5;
+  }
+
+  // ---------- conductivity network ----------
+  function initNetwork(){
+    const n = cities.length;
+    D = Array.from({length:n}, () => new Array(n).fill(1));
+  }
+
+  function currentMaxD(){
+    let m = MIN_D;
+    for(let i=0;i<D.length;i++) for(let j=i+1;j<D.length;j++) if(D[i][j]>m) m = D[i][j];
+    return m;
+  }
+
+  // build one candidate tour biased by conductivity & inverse distance
+  function growTendril(){
+    const n = cities.length;
+    const visited = new Array(n).fill(false);
+    let current = Math.floor(Math.random()*n);
+    visited[current] = true;
+    const order = [current];
+
+    for(let step=1; step<n; step++){
+      let candidates = [];
+      let weights = [];
+      let total = 0;
+      for(let j=0;j<n;j++){
+        if(visited[j]) continue;
+        const d = Math.max(dist(cities[current],cities[j]), 0.0001);
+        const desirability = Math.pow(D[current][j], 1.0) * Math.pow(1/d, 2.4);
+        candidates.push(j);
+        weights.push(desirability);
+        total += desirability;
+      }
+      let pick;
+      if(total <= 0 || !isFinite(total)){
+        pick = candidates[Math.floor(Math.random()*candidates.length)];
+      } else {
+        let r = Math.random()*total;
+        pick = candidates[candidates.length-1];
+        for(let k=0;k<candidates.length;k++){
+          r -= weights[k];
+          if(r<=0){ pick = candidates[k]; break; }
+        }
+      }
+      visited[pick] = true;
+      order.push(pick);
+      current = pick;
+    }
+    return order;
+  }
+
+  function twoOpt(order){
+    const n = order.length;
+    if(n<4) return order;
+    let improved = true;
+    let best = order.slice();
+    let bestLen = tourLength(best);
+    let guard = 0;
+    while(improved && guard < 6){
+      improved = false; guard++;
+      for(let i=0;i<n-1;i++){
+        for(let k=i+1;k<n;k++){
+          const next = best.slice();
+          let a=i, b=k;
+          while(a<b){ const tmp=next[a]; next[a]=next[b]; next[b]=tmp; a++; b--; }
+          const len = tourLength(next);
+          if(len < bestLen - 1e-6){
+            best = next; bestLen = len; improved = true;
+          }
+        }
+      }
+    }
+    return best;
+  }
+
+  function stepIteration(){
+    const n = cities.length;
+    const agentCount = Math.max(12, Math.min(40, n*3));
+    let iterBestOrder = null, iterBestLen = Infinity;
+    const agentTours = [];
+
+    for(let a=0;a<agentCount;a++){
+      const order = growTendril();
+      const len = tourLength(order);
+      agentTours.push({order, len});
+      if(len < iterBestLen){ iterBestLen = len; iterBestOrder = order; }
+    }
+
+    // evaporate
+    const rho = 0.32;
+    for(let i=0;i<n;i++) for(let j=0;j<n;j++) if(i!==j) D[i][j] = Math.max(MIN_D, D[i][j]*(1-rho));
+
+    // reinforce: strongest tendrils deposit the most
+    agentTours.sort((p,q)=>p.len-q.len);
+    const reinforceCount = Math.max(1, Math.round(agentCount*0.35));
+    const Q = 55;
+    for(let a=0;a<reinforceCount;a++){
+      const {order, len} = agentTours[a];
+      const deposit = Q/len;
+      for(let i=0;i<order.length;i++){
+        const u = order[i], v = order[(i+1)%order.length];
+        D[u][v] = Math.min(MAX_D, D[u][v]+deposit);
+        D[v][u] = D[u][v];
+      }
+    }
+
+    if(iterBestLen < bestLength - 1e-6){
+      bestLength = iterBestLen;
+      tourOrder = iterBestOrder;
+      stagnation = 0;
+    } else {
+      stagnation++;
+    }
+    iteration++;
+  }
+
+  // ---------- drawing ----------
+  function hexToRgb(hex){
+    const v = hex.replace('#','');
+    return {
+      r: parseInt(v.substring(0,2),16),
+      g: parseInt(v.substring(2,4),16),
+      b: parseInt(v.substring(4,6),16)
+    };
+  }
+  const COL_DIM = hexToRgb('#3c4a35');
+  const COL_GOLD = hexToRgb('#f6d989');
+
+  function lerpColor(t){
+    const r = Math.round(COL_DIM.r + (COL_GOLD.r-COL_DIM.r)*t);
+    const g = Math.round(COL_DIM.g + (COL_GOLD.g-COL_DIM.g)*t);
+    const b = Math.round(COL_DIM.b + (COL_GOLD.b-COL_DIM.b)*t);
+    return {r,g,b};
+  }
+
+  function drawDish(){
+    const c = dishCenter(), r = dishRadius();
+    const grad = ctx.createRadialGradient(c.x, c.y-r*0.15, r*0.05, c.x, c.y, r*1.05);
+    grad.addColorStop(0, '#141a12');
+    grad.addColorStop(0.7, '#0d120e');
+    grad.addColorStop(1, '#080b08');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,SIZE,SIZE);
+
+    // faint speckle texture (deterministic)
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    for(let i=0;i<70;i++){
+      const a = (i*137.5)%360 * Math.PI/180;
+      const rad = (i*37 % 100)/100 * r*0.95;
+      const x = c.x + Math.cos(a)*rad;
+      const y = c.y + Math.sin(a)*rad;
+      ctx.fillStyle = i%3===0 ? 'rgba(143,211,160,0.05)' : 'rgba(0,0,0,0.15)';
+      ctx.beginPath();
+      ctx.arc(x,y, (i%5)+0.6, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function edgePath(a,b,i,j){
+    const mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
+    const dx = b.x-a.x, dy = b.y-a.y;
+    const len = Math.max(Math.sqrt(dx*dx+dy*dy),0.001);
+    const nx = -dy/len, ny = dx/len;
+    const off = wobble(i,j) * Math.min(18, len*0.12);
+    return { cx: mx+nx*off, cy: my+ny*off };
+  }
+
+  function drawNetwork(){
+    const n = cities.length;
+    if(n<2 || !D.length) return;
+    const maxD = currentMaxD();
+    ctx.lineCap = 'round';
+
+    for(let i=0;i<n;i++){
+      for(let j=i+1;j<n;j++){
+        const norm = Math.max(0, Math.min(1, (D[i][j]-MIN_D)/(maxD-MIN_D)));
+        if(norm < 0.16) continue; // pruned tube — invisible
+        const a = cities[i], b = cities[j];
+        const {cx,cy} = edgePath(a,b,i,j);
+        const col = lerpColor(norm);
+        ctx.strokeStyle = `rgba(${col.r},${col.g},${col.b},${0.12+0.55*norm})`;
+        ctx.lineWidth = 0.6 + norm*2.6;
+        ctx.beginPath();
+        ctx.moveTo(a.x,a.y);
+        ctx.quadraticCurveTo(cx,cy,b.x,b.y);
+        ctx.stroke();
+      }
+    }
+  }
+
+  function drawFinalTour(){
+    if(!tourOrder) return;
+    const n = tourOrder.length;
+    ctx.save();
+    ctx.shadowColor = 'rgba(246,217,137,0.85)';
+    ctx.shadowBlur = 14;
+    ctx.strokeStyle = '#f6d989';
+    ctx.lineWidth = 3.2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for(let i=0;i<n;i++){
+      const a = cities[tourOrder[i]];
+      const b = cities[tourOrder[(i+1)%n]];
+      const {cx,cy} = edgePath(a,b,tourOrder[i],tourOrder[(i+1)%n]);
+      if(i===0) ctx.moveTo(a.x,a.y);
+      ctx.quadraticCurveTo(cx,cy,b.x,b.y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawCities(){
+    for(let i=0;i<cities.length;i++){
+      const p = cities[i];
+      ctx.save();
+      ctx.shadowColor = 'rgba(143,211,160,0.9)';
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = '#cdeed6';
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,5.5,0,Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = '#8fd3a0';
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,2,0,Math.PI*2);
+      ctx.fill();
+    }
+  }
+
+  function roundRect(x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+  }
+
+  function drawLabels(){
+    ctx.font = "11px 'Space Grotesk', sans-serif";
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for(let i=0;i<cities.length;i++){
+      const c = cities[i];
+      if(!c.label) continue;
+      const w = ctx.measureText(c.label).width + 14;
+      const h = 18;
+      const bx = c.x - w/2;
+      const by = c.y - 15 - h;
+      ctx.fillStyle = 'rgba(7,10,8,0.78)';
+      roundRect(bx,by,w,h,7);
+      ctx.fill();
+      ctx.fillStyle = '#f6d989';
+      ctx.fillText(c.label, c.x, by+h/2+0.5);
+    }
+  }
+
+  function drawEdgeDistances(){
+    if(!tourOrder) return;
+    const n = tourOrder.length;
+    ctx.font = "9.5px 'JetBrains Mono', monospace";
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for(let i=0;i<n;i++){
+      const ia = tourOrder[i], ib = tourOrder[(i+1)%n];
+      const a = cities[ia], b = cities[ib];
+      const {cx,cy} = edgePath(a,b,ia,ib);
+      const mx = 0.25*a.x + 0.5*cx + 0.25*b.x;
+      const my = 0.25*a.y + 0.5*cy + 0.25*b.y;
+      const label = formatDistance(dist(a,b));
+      const w = ctx.measureText(label).width + 8;
+      ctx.fillStyle = 'rgba(7,10,8,0.72)';
+      roundRect(mx-w/2, my-7, w, 14, 5);
+      ctx.fill();
+      ctx.fillStyle = '#8fd3a0';
+      ctx.fillText(label, mx, my+0.5);
+    }
+  }
+
+  function draw(){
+    drawDish();
+    drawNetwork();
+    // once growth has stopped, show the settled tour prominently
+    // (also covers the case where a city was just dragged to a new spot)
+    if(!running && tourOrder){
+      drawFinalTour();
+      drawEdgeDistances();
+    }
+    drawCities();
+    drawLabels();
+  }
+
+  // ---------- animation loop ----------
+  function loop(){
+    if(!running) return;
+    stepIteration();
+    statIter.textContent = iteration;
+    updateBestStatDisplay();
+    draw();
+
+    if(iteration >= MAX_ITER || stagnation >= STAGNATION_LIMIT){
+      finishGrowth();
+      return;
+    }
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function finishGrowth(){
+    running = false;
+    if(tourOrder){
+      tourOrder = twoOpt(tourOrder);
+      bestLength = tourLength(tourOrder);
+      updateBestStatDisplay();
+    }
+    statStatus.textContent = 'converged';
+    btnSolve.disabled = false;
+    btnSolve.textContent = 'Grow network';
+    draw();
+  }
+
+  function startGrowth(){
+    if(cities.length < 3 || running) return;
+    initNetwork();
+    tourOrder = null;
+    bestLength = Infinity;
+    iteration = 0;
+    stagnation = 0;
+    running = true;
+    statStatus.textContent = 'growing';
+    btnSolve.disabled = true;
+    btnSolve.textContent = 'Growing…';
+    rafId = requestAnimationFrame(loop);
+  }
+
+  // ---------- UI wiring ----------
+  function refreshCityStat(){
+    statCities.textContent = cities.length;
+    btnSolve.disabled = cities.length < 3;
+    hint.style.display = cities.length ? 'none' : 'block';
+  }
+
+  function cityAt(x,y){
+    for(let i=cities.length-1;i>=0;i--){
+      if(dist(cities[i], {x,y}) <= 12) return i;
+    }
+    return -1;
+  }
+
+  function pointerPos(evt){
+    const rect = canvas.getBoundingClientRect();
+    return { x: evt.clientX-rect.left, y: evt.clientY-rect.top };
+  }
+
+  canvas.addEventListener('pointerdown', (evt) => {
+    if(evt.button !== undefined && evt.button !== 0) return; // ignore right/middle click
+    closeLabelPopup();
+    const {x,y} = pointerPos(evt);
+    const hit = cityAt(x,y);
+    dragState.active = true;
+    dragState.moved = false;
+    dragState.startX = x; dragState.startY = y;
+    dragState.index = hit;
+    canvas.setPointerCapture(evt.pointerId);
+  });
+
+  canvas.addEventListener('pointermove', (evt) => {
+    if(!dragState.active || dragState.index === -1) return;
+    const {x,y} = pointerPos(evt);
+    if(Math.abs(x-dragState.startX)>2 || Math.abs(y-dragState.startY)>2) dragState.moved = true;
+    if(!insideDish(x,y)) return;
+    cities[dragState.index].x = x;
+    cities[dragState.index].y = y;
+    if(tourOrder && !running){
+      bestLength = tourLength(tourOrder);
+      updateBestStatDisplay();
+    }
+    draw();
+  });
+
+  canvas.addEventListener('pointerup', (evt) => {
+    const {x,y} = pointerPos(evt);
+    if(dragState.active && dragState.index === -1 && !dragState.moved){
+      if(insideDish(x,y) && cities.length < 24){
+        cities.push({x,y,label:''});
+        tourOrder = null;
+        statStatus.textContent = 'idle';
+        refreshCityStat();
+        draw();
+      }
+    }
+    dragState.active = false;
+    dragState.index = -1;
+  });
+
+  // ---------- node labeling (right-click) ----------
+  function openLabelPopup(index, x, y){
+    labelPopupIndex = index;
+    labelInput.value = cities[index].label || '';
+    const popW = 172, popH = 152;
+    const left = Math.max(4, Math.min(x + 10, SIZE - popW - 4));
+    const top = Math.max(4, Math.min(y + 10, SIZE - popH - 4));
+    labelPopup.style.left = left + 'px';
+    labelPopup.style.top = top + 'px';
+    labelPopup.hidden = false;
+    labelInput.focus();
+    labelInput.select();
+  }
+
+  function closeLabelPopup(){
+    labelPopup.hidden = true;
+    labelPopupIndex = -1;
+  }
+
+  function saveLabel(text){
+    if(labelPopupIndex < 0 || !cities[labelPopupIndex]) return;
+    cities[labelPopupIndex].label = (text !== undefined ? text : labelInput.value).trim().slice(0,18);
+    closeLabelPopup();
+    draw();
+  }
+
+  function reindexAfterDelete(order, removedIndex){
+    return order.filter((i) => i !== removedIndex).map((i) => i > removedIndex ? i - 1 : i);
+  }
+
+  function deleteCity(index){
+    if(index < 0 || index >= cities.length) return;
+    if(running){
+      running = false;
+      if(rafId) cancelAnimationFrame(rafId);
+    }
+    cities.splice(index, 1);
+    D = []; // conductivity matrix no longer matches city count/order — clear until the next solve
+    if(tourOrder){
+      tourOrder = reindexAfterDelete(tourOrder, index);
+      if(cities.length < 3){
+        tourOrder = null;
+        bestLength = Infinity;
+        statIter.textContent = '–';
+      } else {
+        bestLength = tourLength(tourOrder);
+      }
+    }
+    statBest.textContent = isFinite(bestLength) ? formatDistance(bestLength) : '–';
+    statStatus.textContent = tourOrder ? 'converged' : 'idle';
+    btnSolve.textContent = 'Grow network';
+    closeLabelPopup();
+    refreshCityStat();
+    draw();
+  }
+
+  canvas.addEventListener('contextmenu', (evt) => {
+    evt.preventDefault();
+    const {x,y} = pointerPos(evt);
+    const hit = cityAt(x,y);
+    if(hit >= 0) openLabelPopup(hit, x, y);
+  });
+
+  labelInput.addEventListener('keydown', (evt) => {
+    if(evt.key === 'Enter'){ evt.preventDefault(); saveLabel(); }
+    else if(evt.key === 'Escape'){ evt.preventDefault(); closeLabelPopup(); }
+  });
+
+  labelSave.addEventListener('click', () => saveLabel());
+  labelClear.addEventListener('click', () => saveLabel(''));
+  nodeDelete.addEventListener('click', () => deleteCity(labelPopupIndex));
+
+  labelPopup.querySelectorAll('.chip').forEach((chip) => {
+    chip.addEventListener('click', () => saveLabel(chip.dataset.label));
+  });
+
+  document.addEventListener('pointerdown', (evt) => {
+    if(labelPopup.hidden) return;
+    if(!labelPopup.contains(evt.target) && evt.target !== canvas){
+      closeLabelPopup();
+    }
+  });
+
+  btnRandom.addEventListener('click', () => {
+    closeLabelPopup();
+    cities = [];
+    const count = 8;
+    for(let i=0;i<count;i++){ const p = randomPointInDish(); p.label=''; cities.push(p); }
+    tourOrder = null;
+    bestLength = Infinity;
+    statStatus.textContent = 'idle';
+    statIter.textContent = '–';
+    statBest.textContent = '–';
+    refreshCityStat();
+    draw();
+  });
+
+  btnSolve.addEventListener('click', startGrowth);
+
+  btnReset.addEventListener('click', () => {
+    closeLabelPopup();
+    running = false;
+    if(rafId) cancelAnimationFrame(rafId);
+    cities = [];
+    D = [];
+    tourOrder = null;
+    bestLength = Infinity;
+    iteration = 0;
+    stagnation = 0;
+    statStatus.textContent = 'idle';
+    statIter.textContent = '–';
+    statBest.textContent = '–';
+    btnSolve.textContent = 'Grow network';
+    refreshCityStat();
+    draw();
+  });
+
+  // ---------- init ----------
+  resize();
+  refreshCityStat();
+})();
+</script>
+
+</body>
+</html>
